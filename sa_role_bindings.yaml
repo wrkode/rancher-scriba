@@ -1,0 +1,29 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rancher-query-sa
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  namespace: kube-system
+  name: configmap-manager
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "create", "update", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: manage-configmaps
+  namespace: kube-system
+subjects:
+- kind: ServiceAccount
+  name: rancher-query-sa
+  namespace: kube-system
+roleRef:
+  kind: Role
+  name: configmap-manager
+  apiGroup: rbac.authorization.k8s.io
