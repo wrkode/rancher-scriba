@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,6 +29,24 @@ type Project struct {
 	Name        string            `json:"name"`
 	ClusterID   string            `json:"clusterId"`
 	Annotations map[string]string `json:"annotations"`
+}
+
+const maxRetries = 5
+
+func exponentialBackoff(retry int) time.Duration {
+	return time.Duration(math.Pow(2, float64(retry))) * time.Second
+}
+
+func withRetry(fn func() error) error {
+	for i := 0; i <= maxRetries; i++ {
+		err := fn()
+		if err == nil {
+			return nil
+		}
+		log.Printf("Error encountered: %v. Retrying in %v seconds", err, exponentialBackoff(i+1).Seconds())
+		time.Sleep(exponentialBackoff(i + 1))
+	}
+	return fmt.Errorf("after %d retries, operation failed", maxRetries)
 }
 
 func main() {
@@ -149,82 +169,108 @@ func getHttpClient() *http.Client {
 
 func getClusters(rancherAPIURL string, accessToken string) []Cluster {
 	log.Println("Starting getClusters function")
+	var clusters []Cluster
 
-	client := getHttpClient()
-	req, err := http.NewRequest("GET", rancherAPIURL+"/clusters", nil)
+	err := withRetry(func() error {
+		client := getHttpClient()
+		req, err := http.NewRequest("GET", rancherAPIURL+"/clusters", nil)
+		if err != nil {
+			log.Printf("Error creating new request to Rancher API: %v", err)
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Error sending request to Rancher API: %v", err)
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Unexpected status code from Rancher API: %d\n", resp.StatusCode)
+			return fmt.Errorf("Unexpected status code from Rancher API: %d", resp.StatusCode)
+		}
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("Error reading response body from Rancher API: %v", err)
+			return err
+		}
+
+		var response struct {
+			Data []Cluster `json:"data"`
+		}
+		err = json.Unmarshal(body, &response)
+		if err != nil {
+			log.Printf("Error unmarshaling response body: %v", err)
+			return err
+		}
+
+		clusters = response.Data
+
+		log.Printf("Fetched %d clusters from Rancher API", len(response.Data))
+		return nil // No error, so returning nil
+	})
+
 	if err != nil {
-		log.Fatalf("Error creating new request to Rancher API: %v", err)
+		log.Fatalf("Failed to fetch clusters after retries: %v", err)
 		return nil
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Error sending request to Rancher API: %v", err)
-		return nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Unexpected status code from Rancher API: %d\n", resp.StatusCode)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalf("Error reading response body from Rancher API: %v", err)
-		return nil
-	}
-
-	var response struct {
-		Data []Cluster `json:"data"`
-	}
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		log.Fatalf("Error unmarshaling response body: %v", err)
-		return nil
-	}
-
-	log.Printf("Fetched %d clusters from Rancher API", len(response.Data))
-	return response.Data
+	return clusters
 }
 
 func getProjects(rancherAPIURL string, accessToken string, clusterID string) []Project {
 	log.Printf("Starting getProjects function for cluster ID: %s", clusterID)
+	var projects []Project
 
-	client := getHttpClient()
-	req, err := http.NewRequest("GET", rancherAPIURL+"/projects?clusterId="+clusterID, nil)
+	err := withRetry(func() error {
+		client := getHttpClient()
+		req, err := http.NewRequest("GET", rancherAPIURL+"/projects?clusterId="+clusterID, nil)
+		if err != nil {
+			log.Printf("Error creating new request to Rancher API for projects: %v", err)
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Printf("Error sending request to Rancher API for projects: %v", err)
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("Unexpected status code from Rancher API for projects: %d\n", resp.StatusCode)
+			return fmt.Errorf("Unexpected status code from Rancher API for projects: %d", resp.StatusCode)
+		}
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("Error reading response body from Rancher API for projects: %v", err)
+			return err
+		}
+
+		var response struct {
+			Data []Project `json:"data"`
+		}
+		err = json.Unmarshal(body, &response)
+		if err != nil {
+			log.Printf("Error unmarshaling response body for projects: %v", err)
+			return err
+		}
+
+		projects = response.Data
+
+		log.Printf("Fetched %d projects for cluster ID %s from Rancher API", len(response.Data), clusterID)
+		return nil // No error, so returning nil
+	})
+
 	if err != nil {
-		log.Fatalf("Error creating new request to Rancher API for projects: %v", err)
+		log.Fatalf("Failed to fetch projects after retries: %v", err)
 		return nil
 	}
-	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("Error sending request to Rancher API for projects: %v", err)
-		return nil
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("Unexpected status code from Rancher API for projects: %d\n", resp.StatusCode)
-	}
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatalf("Error reading response body from Rancher API for projects: %v", err)
-		return nil
-	}
-
-	var response struct {
-		Data []Project `json:"data"`
-	}
-	err = json.Unmarshal(body, &response)
-	if err != nil {
-		log.Fatalf("Error unmarshaling response body for projects: %v", err)
-		return nil
-	}
-
-	log.Printf("Fetched %d projects for cluster ID %s from Rancher API", len(response.Data), clusterID)
-	return response.Data
+	return projects
 }
