@@ -1,6 +1,4 @@
-FROM golang:1.21.1-bookworm
-
-# RUN apk add --update --no-cache ca-certificates
+FROM registry.suse.com/bci/golang:1.21
 
 WORKDIR /app
 

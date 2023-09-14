@@ -53,8 +53,6 @@ func main() {
 	rancherAPIURL := os.Getenv("RANCHER_SERVER_URL")
 	accessToken := os.Getenv("RANCHER_TOKEN_KEY")
 
-	//time.Sleep(5 * time.Minute)
-
 	clusters := getClusters(rancherAPIURL, accessToken)
 	configMapData := make(map[string]string)
 
@@ -242,8 +240,8 @@ func getProjects(rancherAPIURL string, accessToken string, clusterID string) []P
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			log.Printf("Unexpected status code from Rancher API for projects: %d\n", resp.StatusCode)
-			return fmt.Errorf("Unexpected status code from Rancher API for projects: %d", resp.StatusCode)
+			log.Printf("unexpected status code from Rancher API for projects: %d\n", resp.StatusCode)
+			return fmt.Errorf("unexpected status code from Rancher API for projects: %d", resp.StatusCode)
 		}
 
 		body, err := ioutil.ReadAll(resp.Body)
