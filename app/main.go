@@ -131,16 +131,26 @@ func updateConfigMap(data map[string]string) error {
 
 	// Iterate over the data and format accordingly
 	for id, name := range data {
-		// If the ID contains "p-", it's a project, otherwise, we assume it's a cluster.
-		// Adjust this check as per your actual ID conventions.
+		parts := strings.Split(name, ",")
+
+		// If the ID contains "p-", it's a project
 		if strings.Contains(id, "p-") {
-			projectsBuilder.WriteString(fmt.Sprintf("---\n%s:\n", id))
+			projectsBuilder.WriteString(fmt.Sprintf("%s:\n", id))
 			projectsBuilder.WriteString(fmt.Sprintf("  Project ID: %s\n", id))
-			projectsBuilder.WriteString(fmt.Sprintf("  Name: %s\n", name))
+			projectsBuilder.WriteString(fmt.Sprintf("  Name: \"Project ID: %s\"\n", id))
+
+			// If there are more parts, treat them as annotations
+			if len(parts) > 1 {
+				for i, part := range parts[1:] {
+					// Escape double quotes
+					escapedPart := strings.ReplaceAll(strings.TrimSpace(part), "\"", "\\\"")
+					projectsBuilder.WriteString(fmt.Sprintf("  Annotation%d: \"%s\"\n", i+1, escapedPart))
+				}
+			}
 		} else {
-			clustersBuilder.WriteString(fmt.Sprintf("---\n%s:\n", id))
+			clustersBuilder.WriteString(fmt.Sprintf("%s:\n", id))
 			clustersBuilder.WriteString(fmt.Sprintf("  Cluster ID: %s\n", id))
-			clustersBuilder.WriteString(fmt.Sprintf("  Name: %s\n", name))
+			clustersBuilder.WriteString(fmt.Sprintf("  Name: 'Cluster ID: %s, Name: Cluster ID: %s'\n", id, id))
 		}
 	}
 
