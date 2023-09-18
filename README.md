@@ -11,7 +11,7 @@ The following preparation is required for rancher-scriba:
 - rancher-scriba requires permission for CRUD operations of ConfigMap objects in the ```kube-system``` namespace.
 For this, the ```sa_role_bindings.yaml``` file has been provided.
 - An API Bearer Token needs to be created for rancher-scriba. Input this value into the ```secrets.sh``` file.
-- The Rancher API endpoint to that rancher-scriba needs to connect to in to format ```https://RANCHER_FQDN>/v3```. Please not the ```/v3```. Input this value into the ```secrets.sh``` file.
+- The Rancher API endpoint to that rancher-scriba needs to connect to in to format ```https://RANCHER_FQDN>```. Input this value into the ```secrets.sh``` file.
 - Adjust the collection interval (default 5 minutes) in ```rancher-cronjob.yaml```
 
 ## Deployment
