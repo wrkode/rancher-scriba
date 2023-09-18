@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -50,7 +51,7 @@ func withRetry(fn func() error) error {
 }
 
 func main() {
-	rancherAPIURL := os.Getenv("RANCHER_SERVER_URL")
+	rancherAPIURL := os.Getenv("RANCHER_SERVER_URL") + "/v3"
 	accessToken := os.Getenv("RANCHER_TOKEN_KEY")
 
 	clusters := getClusters(rancherAPIURL, accessToken)
@@ -96,13 +97,12 @@ func getKubeClient() (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
-func updateConfigMap(data map[string]string) {
+func updateConfigMap(data map[string]string) error {
 	log.Println("Starting updateConfigMap function")
 
 	clientset, err := getKubeClient()
 	if err != nil {
-		log.Fatalf("Error getting Kube client: %v", err)
-		return
+		return err
 	}
 
 	cmClient := clientset.CoreV1().ConfigMaps("kube-system")
@@ -116,46 +116,44 @@ func updateConfigMap(data map[string]string) {
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "rancher-data",
 			},
-			Data: map[string]string{
-				"clusters": "",
-				"projects": "",
-			},
+			Data: make(map[string]string),
 		}
 		_, err = cmClient.Create(context.TODO(), cm, metav1.CreateOptions{})
 		if err != nil {
-			log.Fatalf("Error creating ConfigMap: %v", err)
-			return
+			return err
 		}
 		log.Println("Successfully created ConfigMap 'rancher-data'")
 	} else {
-		// If it exists, update it
 		log.Println("ConfigMap 'rancher-data' found, updating")
-		cm.Data["clusters"] = ""
-		cm.Data["projects"] = ""
-		_, err = cmClient.Update(context.TODO(), cm, metav1.UpdateOptions{})
-		if err != nil {
-			log.Fatalf("Error updating ConfigMap: %v", err)
-			return
+	}
+
+	var clustersBuilder, projectsBuilder strings.Builder
+
+	// Iterate over the data and format accordingly
+	for id, name := range data {
+		// If the ID contains "p-", it's a project, otherwise, we assume it's a cluster.
+		// Adjust this check as per your actual ID conventions.
+		if strings.Contains(id, "p-") {
+			projectsBuilder.WriteString(fmt.Sprintf("---\n%s:\n", id))
+			projectsBuilder.WriteString(fmt.Sprintf("  Project ID: %s\n", id))
+			projectsBuilder.WriteString(fmt.Sprintf("  Name: %s\n", name))
+		} else {
+			clustersBuilder.WriteString(fmt.Sprintf("---\n%s:\n", id))
+			clustersBuilder.WriteString(fmt.Sprintf("  Cluster ID: %s\n", id))
+			clustersBuilder.WriteString(fmt.Sprintf("  Name: %s\n", name))
 		}
-		log.Println("Successfully updated ConfigMap 'rancher-data'")
 	}
 
-	// Iterate over the clusters and add them to the configmap
-	for clusterID, clusterData := range data {
-		cm.Data["clusters"] += fmt.Sprintf("---\n%s\n", clusterID+":"+clusterData)
-	}
-
-	// Iterate over the projects and add them to the configmap
-	for projectID, projectData := range data {
-		cm.Data["projects"] += fmt.Sprintf("---\n%s\n", projectID+":"+projectData)
-	}
+	cm.Data["clusters"] = clustersBuilder.String()
+	cm.Data["projects"] = projectsBuilder.String()
 
 	_, err = cmClient.Update(context.TODO(), cm, metav1.UpdateOptions{})
 	if err != nil {
-		log.Fatalf("Error updating ConfigMap: %v", err)
-		return
+		return err
 	}
 	log.Println("Successfully updated ConfigMap 'rancher-data'")
+
+	return nil
 }
 
 func getHttpClient() *http.Client {
